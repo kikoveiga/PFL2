@@ -1,3 +1,9 @@
+import Text.Parsec(digit, letter, (<|>), many1, ParseError, char, string, notFollowedBy, spaces, between, alphaNum)
+import Text.Parsec.String(Parser)
+import Text.Parsec.Expr(buildExpressionParser, Operator(..), Assoc(..))
+import Data.Functor.Identity(Identity)
+
+
 buildData :: [String] -> Program
 buildData [] = []
 buildData (x:xs)
@@ -91,3 +97,33 @@ buildAexp (x:symbol:xs)
   | symbol == "-" = let (aexp, rest) = buildAexp xs in if head x `elem` ['0'..'9'] then (SubA (Num (read x)) aexp, rest) else (SubA aexp (Var x), rest)
   | otherwise = error "Parse error"
 
+integer :: Parser Integer
+integer = read <$> many1 digit
+
+variable :: Parser String
+variable = many1 $ letter <|> digit
+-- Parse an arithmetic expression
+aexp :: Parser Aexp
+aexp = buildExpressionParser operators term
+
+term :: Parser Aexp
+term = parens aexp <|> Num <$> integer <|> Var <$> variable
+
+operators :: [[Operator String () Identity Aexp]]
+operators =
+  [ [ Infix (reservedOp "*" >> return MultA) AssocLeft],
+    [ Infix (reservedOp "+" >> return AddA) AssocLeft
+    , Infix (reservedOp "-" >> return SubA) AssocLeft
+    ]
+  ]
+
+-- Helper function to parse reserved operators
+reservedOp :: String -> Parser ()
+reservedOp s = do
+  _ <- string s
+  notFollowedBy (alphaNum <|> char '_') -- Make sure the operator is not part of a variable
+  spaces
+
+-- Helper function to parse parentheses
+parens :: Parser a -> Parser a
+parens = between (char '(') (char ')')

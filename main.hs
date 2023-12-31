@@ -1,9 +1,4 @@
 import Data.List (intercalate, sortOn, isInfixOf)
-import Text.Parsec(digit, letter, (<|>), many1, ParseError, char, string, notFollowedBy, spaces, between, alphaNum)
-import Text.Parsec.String(Parser)
-import Text.Parsec.Expr(buildExpressionParser, Operator(..), Assoc(..))
-import Data.Functor.Identity(Identity)
-
 
 -- Part 1
 
@@ -126,36 +121,6 @@ compile (Comp x y:xs) = compile (x:y:xs)
 compile (If x y z:xs) = compB x ++ [Branch (compile (y:xs)) (compile (z:xs))]
 compile (While x y:xs) = Loop (compB x ++ compile (y:xs)) [Noop] : compile xs
 
-integer :: Parser Integer
-integer = read <$> many1 digit
-
-variable :: Parser String
-variable = many1 $ letter <|> digit
--- Parse an arithmetic expression
-aexp :: Parser Aexp
-aexp = buildExpressionParser operators term
-
-term :: Parser Aexp
-term = parens aexp <|> Num <$> integer <|> Var <$> variable
-
-operators :: [[Operator String () Identity Aexp]]
-operators =
-  [ [ Infix (reservedOp "*" >> return MultA) AssocLeft],
-    [ Infix (reservedOp "+" >> return AddA) AssocLeft
-    , Infix (reservedOp "-" >> return SubA) AssocLeft
-    ]
-  ]
-
--- Helper function to parse reserved operators
-reservedOp :: String -> Parser ()
-reservedOp s = do
-  _ <- string s
-  notFollowedBy (alphaNum <|> char '_') -- Make sure the operator is not part of a variable
-  spaces
-
--- Helper function to parse parentheses
-parens :: Parser a -> Parser a
-parens = between (char '(') (char ')')
 
 parse :: String -> Program
 parse = buildData . lexer . filter (/= ' ') . filter (/= '\n')

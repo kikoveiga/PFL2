@@ -130,8 +130,14 @@ buildData [] = []
 buildData (x:xs)
   | x == "if" = let (ifStm, rest) = buildIf xs in ifStm : buildData rest
   | x == "while" = let (whileStm, rest) = buildWhile xs in whileStm : buildData rest
-  | otherwise = let (assignStm, rest) = buildAssign (x:xs) in assignStm : buildData rest
+  | isValidVar x && head xs == ":=" = let (assignStm, rest) = buildAssign (x:xs) in assignStm : buildData rest
 
+buildAssign :: [String] -> (Stm, [String])
+buildAssign [] = error "Parse error 8"
+buildAssign (x:":=":xs)
+  | isValidVar x = (Assign x (fst (buildAexp (takeWhile (/= ";") xs))), tail (dropWhile (/= ";") xs))
+  | otherwise = error "Parse error 9"
+    
 buildIf :: [String] -> (Stm, [String])
 buildIf [] = error "Parse error 1"
 buildIf (x:xs)
@@ -155,12 +161,7 @@ buildWhile (x:xs)
     else error "Parse error 6"
   | otherwise = error "Parse error 7"
 
-buildAssign :: [String] -> (Stm, [String])
-buildAssign [] = error "Parse error 8"
-buildAssign (variable:":=":aexp)
-  | head variable `elem` ['a'..'z'] = let (result, rest) = buildAexp aexp in (Assign variable result, rest)
-  | head variable `elem` ['0'..'9'] = error "Parse error 10"
-  | otherwise = error "Parse error 11"
+
 
 buildStm :: [String] -> (Stm, [String])
 buildStm [] = error "Parse error 12"
@@ -171,27 +172,73 @@ buildStm (x:xs)
   | otherwise = error "Parse error 13"
 
 buildBexp :: [String] -> (Bexp, [String])
-buildBexp [] = error "Parse error 14"
-buildBexp (x:xs)
-  | x == "not" = let (bexp, rest) = buildBexp xs in (NegB bexp, rest)
-  | x == "True" = (Bool True, xs)
-  | x == "False" = (Bool False, xs)
-  | x == "(" = let (aexp1, rest) = buildAexp xs in
-    if head rest == "==" then
-      let (aexp2, rest1) = buildAexp (tail rest) in
-        if head rest1 == ")" then
-          (EqA aexp1 aexp2, tail rest1)
-        else error "Parse error 15"
-    else if head rest == "<=" then
-      let (aexp2, rest1) = buildAexp (tail rest) in
-        if head rest1 == ")" then
-          (LeA aexp1 aexp2, tail rest1)
-        else error "Parse error 16"
-    else error "Parse error 17"
-  | otherwise = error "Parse error 18"
+buildBexp = buildAnd
+
+buildAnd :: [String] -> (Bexp, [String])
+buildAnd xs = 
+  let (left, rest) = buildNot xs
+  in buildAnd' left rest
+
+buildAnd' :: Bexp -> [String] -> (Bexp, [String])
+buildAnd' left (op:rest) | op == "and" =
+  let (right, rest') = buildNot rest
+  in buildAnd' (AndB left right) rest'
+buildAnd' left xs = (left, xs)
+
+buildNot :: [String] -> (Bexp, [String])
+buildNot ("not":xs) = 
+  let (exp, rest) = buildComparison xs
+  in (NegB exp, rest)
+buildNot xs = buildComparison xs
+
+buildComparison :: [String] -> (Bexp, [String])
+buildComparison ("True":xs) = (Bool True, xs)
+buildComparison ("False":xs) = (Bool False, xs)
+buildComparison xs = 
+  let (left, rest) = buildAexp xs
+      (op:right) = rest
+      (right', rest') = buildAexp right
+  in case op of
+       "==" -> (EqA left right', rest')
+       "<=" -> (LeA left right', rest')
+       ">=" -> (LeA right' left, rest')
+       _ -> error "Parse error: unknown operator"
 
 buildAexp :: [String] -> (Aexp, [String])
-buildAexp [] = error "Parse error 19"
+buildAexp = buildAddSub
+
+buildAddSub :: [String] -> (Aexp, [String])
+buildAddSub xs = 
+  let (left, rest) = buildMult xs
+  in buildAddSub' left rest
+
+buildAddSub' :: Aexp -> [String] -> (Aexp, [String])
+buildAddSub' left (op:rest) | op `elem` ["+", "-"] =
+  let (right, rest') = buildMult rest
+  in buildAddSub' (case op of "+" -> AddA left right
+                              "-" -> SubA right left) rest'
+buildAddSub' left xs = (left, xs)
+
+buildMult :: [String] -> (Aexp, [String])
+buildMult xs = 
+  let (left, rest) = buildFactor xs
+  in buildMult' left rest
+
+buildMult' :: Aexp -> [String] -> (Aexp, [String])
+buildMult' left (op:rest) | op `elem` ["*", "/"] =
+  let (right, rest') = buildFactor rest
+  in buildMult' (case op of "*" -> MultA left right) rest'
+buildMult' left xs = (left, xs)
+
+buildFactor :: [String] -> (Aexp, [String])
+buildFactor [] = error "Parse error: empty input"
+buildFactor (x:xs) 
+  | all (`elem` ['0'..'9']) x = (Num (read x), xs)
+  | x == "(" = 
+      let (exp, _:rest) = buildAexp xs -- ignore the closing parenthesis
+      in (exp, rest)
+  | otherwise = (Var x, xs)
+  
 
 
 testRead :: IO ()

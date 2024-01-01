@@ -1,4 +1,6 @@
 import Data.List (intercalate, sortOn, isInfixOf)
+import Distribution.Simple.Utils (xargs)
+import Distribution.Simple.Build (build)
 
 -- Part 1
 
@@ -89,13 +91,11 @@ testAssembler code = (stack2Str stack, state2Str state)
 
 -- Part 2
 
--- TODO: Define the types Aexp, Bexp, Stm and Program
-
 data Aexp = Num Integer | Var String | AddA Aexp Aexp | SubA Aexp Aexp | MultA Aexp Aexp deriving Show
 
-data Bexp = Bool Bool | EqA Aexp Aexp | LeA Aexp Aexp | NegB Bexp | AndB Bexp Bexp deriving Show
+data Bexp = Bool Bool | EqA Aexp Aexp | EqB Bexp Bexp | LeA Aexp Aexp | NegB Bexp | AndB Bexp Bexp deriving Show
 
-data Stm = Assign String Aexp | Skip | Comp Stm Stm | If Bexp Stm Stm | While Bexp Stm deriving Show
+data Stm = Assign String Aexp | Skip | Seq Stm Stm | If Bexp Stm Stm | While Bexp Stm deriving Show
 
 type Program = [Stm]
 
@@ -109,7 +109,7 @@ compA (MultA x y) = compA x ++ compA y ++ [Mult]
 compB :: Bexp -> Code
 compB (Bool x) = if x then [Tru] else [Fals]
 compB (EqA x y) = compA x ++ compA y ++ [Equ]
-compB (LeA x y) = compA x ++ compA y ++ [Le]
+compB (LeA x y) = compA y ++ compA x ++ [Le]
 compB (NegB x) = compB x ++ [Neg]
 compB (AndB x y) = compB x ++ compB y ++ [And]
 
@@ -117,7 +117,7 @@ compile :: Program -> Code
 compile [] = []
 compile (Assign x y:xs) = compA y ++ [Store x] ++ compile xs
 compile (Skip:xs) = Noop:compile xs
-compile (Comp x y:xs) = compile (x:y:xs)
+compile (Seq x y:xs) = compile (x:y:xs)
 compile (If x y z:xs) = compB x ++ [Branch (compile (y:xs)) (compile (z:xs))]
 compile (While x y:xs) = Loop (compB x ++ compile (y:xs)) [Noop] : compile xs
 
@@ -128,84 +128,125 @@ parse = buildData . lexer . filter (/= ' ') . filter (/= '\n')
 buildData :: [String] -> Program
 buildData [] = []
 buildData (x:xs)
+  | null xs || notElem ";" xs || length (filter (=="(") (x:xs)) /= length (filter (==")") (x:xs)) = error "Run-time error"
   | x == "if" = let (ifStm, rest) = buildIf xs in ifStm : buildData rest
   | x == "while" = let (whileStm, rest) = buildWhile xs in whileStm : buildData rest
   | isValidVar x && head xs == ":=" = let (assignStm, rest) = buildAssign (x:xs) in assignStm : buildData rest
+  | otherwise = error "Run-time error"
 
 buildAssign :: [String] -> (Stm, [String])
 buildAssign [] = error "Parse error 8"
 buildAssign (x:":=":xs)
   | isValidVar x = (Assign x (fst (buildAexp (takeWhile (/= ";") xs))), tail (dropWhile (/= ";") xs))
   | otherwise = error "Parse error 9"
+buildAssign _ = error "Parse error 10"
     
 buildIf :: [String] -> (Stm, [String])
 buildIf [] = error "Parse error 1"
-buildIf (x:xs)
-  | x == "(" = let (bexp, rest) = buildBexp xs in
-    if head rest == ")" then
-      let (stm1, rest1) = buildStm (tail rest) in
-        if head rest1 == "else" then
-          let (stm2, rest2) = buildStm (tail rest1) in
-            (If bexp stm1 stm2, rest2)
-        else error "Parse error 2"
-    else error "Parse error 3"
-  | otherwise = error "Parse error 4"
+buildIf xs = 
+  let (bexp, rest) = (fst (buildBexp (takeWhile (/= "then") xs)), tail (dropWhile (/= "then") xs))
+
+      (thenStm, rest')
+        | head rest == "(" = buildSeq (tail rest)
+        | head rest == "if" = buildIf (tail rest)
+        | head rest == "while" = buildWhile (tail rest)
+        | isValidVar (head rest) = (fst (buildAssign (takeWhile (/= "else") rest)), tail (dropWhile (/= "else") rest))
+        | otherwise = error "Parse error 6"
+
+      (elseStm, rest'')
+        | head rest' == "(" = buildSeq (tail rest')
+        | head rest' == "if" = buildIf (tail rest')
+        | head rest' == "while" = buildWhile (tail rest')
+        | isValidVar (head rest) = (fst (buildAssign (takeWhile (/= ";") rest' ++ [";"])), tail (dropWhile (/= ";") rest'))
+        | otherwise = error "Parse error 7"
+
+  in (If bexp thenStm elseStm, rest'')
 
 buildWhile :: [String] -> (Stm, [String])
-buildWhile [] = error "Parse error 5"
-buildWhile (x:xs)
-  | x == "(" = let (bexp, rest) = buildBexp xs in
-    if head rest == ")" then
-      let (stm, rest1) = buildStm (tail rest) in
-        (While bexp stm, rest1)
-    else error "Parse error 6"
-  | otherwise = error "Parse error 7"
+buildWhile [] = error "Parse error 2"
+buildWhile xs = 
+  let (bexp, rest) = (fst (buildBexp (takeWhile (/= "do") xs)), tail (dropWhile (/= "do") xs))
 
+      (doStm, rest')
+        | head rest == "(" = buildSeq (tail rest)
+        | head rest == "if" = buildIf (tail rest)
+        | head rest == "while" = buildWhile (tail rest)
+        | isValidVar (head rest) = (fst (buildAssign (takeWhile (/= ";") rest ++ [";"])), tail (dropWhile (/= ";") rest))
+  in (While bexp doStm, rest')
 
-
-buildStm :: [String] -> (Stm, [String])
-buildStm [] = error "Parse error 12"
-buildStm (x:xs)
-  | x == "if" = buildIf xs
-  | x == "while" = buildWhile xs
-  | head x `elem` ['a'..'z'] = buildAssign (x:xs)
-  | otherwise = error "Parse error 13"
+buildSeq :: [String] -> (Stm, [String])
+buildSeq [] = error "Parse error 5"
+buildSeq (x:xs)
+  | x == "if" = let (stm, rest) = buildIf xs in (Seq stm (fst (buildSeq rest)), tail (dropWhile (/= ")") rest))
+  | x == "while" = let (stm, rest) = buildWhile xs in (Seq stm (fst (buildSeq rest)), tail (dropWhile (/= ")") rest))
+  | isValidVar x && head xs == ":=" = let (stm, rest) = buildAssign (x:xs) in (Seq stm (fst (buildSeq rest)), tail (dropWhile (/= ")") rest))
+  | x == ";" || x == ")" = (Skip, xs)
+  | otherwise = error "Parse error 3"
 
 buildBexp :: [String] -> (Bexp, [String])
 buildBexp = buildAnd
 
 buildAnd :: [String] -> (Bexp, [String])
 buildAnd xs = 
-  let (left, rest) = buildNot xs
+  let (left, rest) = buildEqB xs
   in buildAnd' left rest
 
 buildAnd' :: Bexp -> [String] -> (Bexp, [String])
 buildAnd' left (op:rest) | op == "and" =
-  let (right, rest') = buildNot rest
+  let (right, rest') = buildEqB rest
   in buildAnd' (AndB left right) rest'
 buildAnd' left xs = (left, xs)
 
+buildEqB :: [String] -> (Bexp, [String])
+buildEqB xs = 
+  let (left, rest) = buildNot xs
+  in buildEqB' left rest
+
+buildEqB' :: Bexp -> [String] -> (Bexp, [String])
+buildEqB' left (op:rest) | op == "=" =
+  let (right, rest') = buildNot rest
+  in buildEqB' (EqB left right) rest'
+buildEqB' left xs = (left, xs)
+
 buildNot :: [String] -> (Bexp, [String])
 buildNot ("not":xs) = 
-  let (exp, rest) = buildComparison xs
+  let (exp, rest) = buildEqA xs
   in (NegB exp, rest)
-buildNot xs = buildComparison xs
+buildNot xs = buildEqA xs
+
+buildEqA :: [String] -> (Bexp, [String])
+buildEqA xs = 
+  let (left, rest) = buildComparison xs
+  in buildEqA' left rest
+
+buildEqA' :: Bexp -> [String] -> (Bexp, [String])
+buildEqA' left (op:rest) | op == "==" =
+  let (right, rest') = buildComparison rest
+  in buildEqA' (EqB left right) rest'
+buildEqA' left xs = (left, xs)
 
 buildComparison :: [String] -> (Bexp, [String])
 buildComparison ("True":xs) = (Bool True, xs)
 buildComparison ("False":xs) = (Bool False, xs)
+buildComparison("(":xs) = 
+  let (exp, _:rest) = buildBexp xs -- ignore the closing parenthesis
+  in (exp, rest)
+
 buildComparison xs = 
   let (left, rest) = buildAexp xs
-      (op:right) = rest
-      (right', rest') = buildAexp right
+      (op:rest') = rest
+      (right, rest'') = buildAexp rest'
   in case op of
-       "==" -> (EqA left right', rest')
-       "<=" -> (LeA left right', rest')
-       ">=" -> (LeA right' left, rest')
-       _ -> error "Parse error: unknown operator"
+    "<=" -> (LeA left right, rest'')
+    ">=" -> (LeA right left, rest'')
+    "==" -> (EqA left right, rest'')
+    "not" -> (NegB (EqA left right), rest'')
+    "=" -> (EqA left right, rest'')
+    _ -> error "Parse error 4"
+
 
 buildAexp :: [String] -> (Aexp, [String])
-buildAexp = buildAddSub
+buildAexp  = buildAddSub 
 
 buildAddSub :: [String] -> (Aexp, [String])
 buildAddSub xs = 
@@ -225,9 +266,9 @@ buildMult xs =
   in buildMult' left rest
 
 buildMult' :: Aexp -> [String] -> (Aexp, [String])
-buildMult' left (op:rest) | op `elem` ["*", "/"] =
+buildMult' left (op:rest) | op == "*" =
   let (right, rest') = buildFactor rest
-  in buildMult' (case op of "*" -> MultA left right) rest'
+  in buildMult' (MultA left right) rest'
 buildMult' left xs = (left, xs)
 
 buildFactor :: [String] -> (Aexp, [String])
@@ -251,6 +292,15 @@ testRead = do
   print $ lexerhelper "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);"
   print $ lexerhelper "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);"
 
+testBuildAexp :: IO ()
+testBuildAexp = do
+  print $ buildAexp $ lexerhelper "1"
+  print $ buildAexp $ lexerhelper "x"
+  print $ buildAexp $ lexerhelper "1+1"
+  print $ buildAexp $ lexerhelper "1+2*3"
+  print $ buildAexp $ lexerhelper "1+2*3+4"
+  print $ buildAexp $ lexerhelper "1+2*(3+4)*5"
+  print $ buildAexp $ lexerhelper "((1))"
 
 lexerhelper :: String -> [String]
 lexerhelper = lexer . filter (/= ' ') . filter (/= '\n')
@@ -278,7 +328,6 @@ lexer ('a':'n':'d':xs) = "and" : lexer xs
 lexer ('T':'r':'u':'e':xs) = "True" : lexer xs
 lexer ('F':'a':'l':'s':'e':xs) = "False" : lexer xs
 lexer ('d':'o':xs) = "do" : lexer xs
-lexer ('f':'a':'c':'t':xs) = "fact" : lexer xs
 lexer (x : xs) | x `elem` ['0'..'9'] = let (num, rest) = span (`elem` ['0'..'9']) (x:xs) in num : lexer rest
 lexer (x : xs)
   | x `elem` ['a'..'z'] = 

@@ -4,7 +4,7 @@
 
 For the second Practical Assignment (TP2) of Functional and Logic Programming (PFL) 2023/2024 @ FEUP, we implemented, in Haskell, a low-level machine that executes basic arithmetic and logic operations and a small imperative programming language with its own compiler that transforms a program into a sequence of instructions for the machine.
 
-Our group is T12_G06, composed by:
+Our group is T12_G06, composed of:
 
 - João Mendes Silva Belchior - up202108777@up.pt (50%)
 - José Francisco Reis Pedreiras Neves Veiga - up202108753@up.pt (50%)
@@ -23,8 +23,7 @@ $ :l main.hs
 This machine is composed of a list of instructions (code), an evaluation stack that computes the instructions and a memory (state) that stores the values of the variables, where:
 
 ```haskell
-data Inst = Push Integer | Add | Mult | Sub | Tru | Fals | Equ | Le | And | Neg | 
-            Fetch String | Store String | Noop | Branch Code Code | Loop Code Code deriving Show
+data Inst = Push Integer | Add | Mult | Sub | Tru | Fals | Equ | Le | And | Neg | Fetch String | Store String | Noop | Branch Code Code | Loop Code Code deriving Show
 type Code = [Inst]
 
 type Stack = [Either Integer Bool]

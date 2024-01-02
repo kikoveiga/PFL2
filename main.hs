@@ -135,14 +135,14 @@ buildData (x:xs)
   | otherwise = error "Run-time error"
 
 buildAssign :: [String] -> (Stm, [String])
-buildAssign [] = error "Parse error 8"
+buildAssign [] = error "Run-time error"
 buildAssign (x:":=":xs)
   | isValidVar x = (Assign x (fst (buildAexp (takeWhile (/= ";") xs))), tail (dropWhile (/= ";") xs))
-  | otherwise = error "Parse error 9"
-buildAssign _ = error "Parse error 10"
+  | otherwise = error "Run-time error"
+buildAssign _ = error "Run-time error"
     
 buildIf :: [String] -> (Stm, [String])
-buildIf [] = error "Parse error 1"
+buildIf [] = error "Run-time error"
 buildIf xs = 
   let (bexp, rest) = (fst (buildBexp (takeWhile (/= "then") xs)), tail (dropWhile (/= "then") xs))
 
@@ -151,19 +151,19 @@ buildIf xs =
         | head rest == "if" = buildIf (tail rest)
         | head rest == "while" = buildWhile (tail rest)
         | isValidVar (head rest) = (fst (buildAssign (takeWhile (/= "else") rest)), tail (dropWhile (/= "else") rest))
-        | otherwise = error "Parse error 6"
+        | otherwise = error "Run-time error"
 
       (elseStm, rest'')
         | head rest' == "(" = buildSeq rest'
         | head rest' == "if" = buildIf (tail rest')
         | head rest' == "while" = buildWhile (tail rest')
         | isValidVar (head rest) = (fst (buildAssign (takeWhile (/= ";") rest' ++ [";"])), tail (dropWhile (/= ";") rest'))
-        | otherwise = error "Parse error 7"
+        | otherwise = error "Run-time error"
 
   in (If bexp thenStm elseStm, rest'')
 
 buildWhile :: [String] -> (Stm, [String])
-buildWhile [] = error "Parse error 2"
+buildWhile [] = error "Run-time error"
 buildWhile xs = 
   let (bexp, rest) = (fst (buildBexp (takeWhile (/= "do") xs)), tail (dropWhile (/= "do") xs))
 
@@ -175,7 +175,7 @@ buildWhile xs =
   in (While bexp doStm, rest')
 
 buildSeq :: [String] -> (Stm, [String])
-buildSeq [] = error "Parse error 5"
+buildSeq [] = error "Run-time error"
 buildSeq (x:xs)
   |isValidVar x && head xs == ":=" = buildAssign (x:xs)
   | x == "if" = let (stm, rest) = buildIf xs in (Seq stm (fst (buildSeq rest)), tail (dropWhile (/= ")") rest))
@@ -184,7 +184,7 @@ buildSeq (x:xs)
                 (instr1, rest) = buildSeq xs
                 (instr2, rest') = buildSeq rest
                 in (Seq instr1 instr2, tail rest')
-  | otherwise = error "Parse error 3"
+  | otherwise = error "Run-time error"
 
 buildBexp :: [String] -> (Bexp, [String])
 buildBexp = buildAnd
@@ -245,7 +245,7 @@ buildComparison xs =
     "==" -> (EqA left right, rest'')
     "not" -> (NegB (EqA left right), rest'')
     "=" -> (EqA left right, rest'')
-    _ -> error "Parse error 4"
+    _ -> error "Run-time error"
 
 
 buildAexp :: [String] -> (Aexp, [String])
@@ -275,7 +275,7 @@ buildMult' left (op:rest) | op == "*" =
 buildMult' left xs = (left, xs)
 
 buildFactor :: [String] -> (Aexp, [String])
-buildFactor [] = error "Parse error: empty input"
+buildFactor [] = error "Run-time error"
 buildFactor (x:xs) 
   | all (`elem` ['0'..'9']) x = (Num (read x), xs)
   | x == "(" = 
@@ -337,8 +337,8 @@ lexer (x : xs)
     let (var, rest) = span (\c -> c `elem` (['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ ['_'])) (x:xs) in
       if isValidVar var
         then var : lexer rest 
-        else error "Lexical error"
-  | otherwise = error "Lexical error"
+        else error "Run-time error"
+  | otherwise = error "Run-time error"
     
 isValidVar :: String -> Bool
 isValidVar x = not (any (`isInfixOf` x) ["if", "then", "else", "while", "not", "and", "True", "False", "do"])
